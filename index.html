@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- 外への通信を禁止する（読んだデータが外に出ないことを仕組みで保証する）。同じサイトの部品だけ使う -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="棚卸しカウント">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>棚卸しカウントくん</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <header class="bar">
+    <div class="title">棚卸しカウントくん <span class="ver">試作 <span id="verLabel"></span></span></div>
+    <button id="menuBtn" class="icon-btn" aria-label="メニュー">⋯</button>
+  </header>
+
+  <div id="safariNotice" class="notice" hidden>
+    Safariで開いています。記録はホーム画面から開いた時と<b>別の場所</b>に保存されます。
+    本番は「共有 → ホーム画面に追加」して、ホーム画面から開いてください。
+  </div>
+
+  <section class="cam" id="camBox">
+    <video id="video" playsinline muted autoplay></video>
+    <div class="frame" id="frame"><div class="frame-line"></div></div>
+    <div class="flash" id="flash"></div>
+    <div class="cam-msg" id="camMsg">
+      <button id="startBtn" class="big-btn">カメラをはじめる</button>
+      <p class="hint">バーコードを<b>20〜30cm</b>離して、枠の中に横向きで入れてください。<br>同じ商品は<b>1個ずつ枠から外して</b>読みます。</p>
+      <p class="err" id="camErr" hidden></p>
+    </div>
+    <div class="cam-status" id="camStatus"></div>
+    <div class="zoom" id="zoomBox" hidden></div>
+    <button id="pauseBtn" class="pause-btn" hidden>一時停止</button>
+  </section>
+
+  <section class="last" id="lastBox">
+    <div class="last-empty" id="lastEmpty">まだ何も読んでいません</div>
+    <div class="last-body" id="lastBody" hidden>
+      <div class="last-jan mono" id="lastJan"></div>
+      <div class="last-row">
+        <button class="qty-btn" id="lastQtyBtn"><span class="lbl">この回</span><span class="num mono" id="lastQty"></span><span class="lbl">個</span><span class="edit">打ち直す</span></button>
+        <span class="lbl" id="lastEditNote" hidden>一覧で修正</span>
+        <div class="last-total"><span class="lbl">このJANの合計</span><span class="num mono" id="lastTotal"></span></div>
+      </div>
+    </div>
+    <button class="undo-btn" id="undoBtn" disabled>取り消し</button>
+  </section>
+
+  <section class="stats">
+    <div><span class="lbl">合計</span><span class="num mono" id="sumPieces">0</span><span class="lbl">点</span></div>
+    <div><span class="lbl">JAN</span><span class="num mono" id="sumKinds">0</span><span class="lbl">種類</span></div>
+    <div class="speed" id="speedBox"><button id="speedBtn" class="small-btn">1分計測</button><span id="speedOut" class="mono"></span></div>
+  </section>
+
+  <nav class="actions">
+    <button id="manualBtn" class="act-btn">手入力</button>
+    <button id="listBtn" class="act-btn">一覧</button>
+    <button id="sendBtn" class="act-btn primary">送る</button>
+  </nav>
+</div>
+
+<!-- 数字キー（個数の打ち直し・手入力・一覧の修正で共通） -->
+<div class="sheet" id="padSheet" hidden>
+  <div class="sheet-card">
+    <div class="pad-title" id="padTitle"></div>
+    <div class="pad-sub mono" id="padSub"></div>
+    <div class="pad-display mono" id="padDisplay"></div>
+    <div class="pad-err" id="padErr"></div>
+    <div class="pad-grid" id="padGrid"></div>
+    <div class="pad-foot">
+      <button class="act-btn" id="padCancel">やめる</button>
+      <button class="act-btn primary" id="padOk">決定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 一覧 -->
+<div class="sheet" id="listSheet" hidden>
+  <div class="sheet-card tall">
+    <div class="sheet-head"><b>一覧</b><span class="lbl" id="listSum"></span><button class="icon-btn" id="listClose" aria-label="閉じる">✕</button></div>
+    <p class="lbl">タップすると合計の個数を直せます（0にすると一覧から消えます）。</p>
+    <ol class="list" id="listBody"></ol>
+  </div>
+</div>
+
+<!-- 送る -->
+<div class="sheet" id="sendSheet" hidden>
+  <div class="sheet-card">
+    <div class="sheet-head"><b>送る</b><button class="icon-btn" id="sendClose" aria-label="閉じる">✕</button></div>
+    <p class="lbl" id="sendSum"></p>
+    <button class="big-btn wide" id="copyBtn">コピー（Excelに貼る用）</button>
+    <p class="lbl">「JAN（タブ）数量」の形でコピーします。TeamsやSlackに貼って送ってください。</p>
+    <button class="big-btn wide ghost" id="fileBtn">ファイルを送る（CSV）</button>
+    <p class="lbl">記録用のCSVファイルを共有から送ります。</p>
+    <p class="done" id="sendDone"></p>
+  </div>
+</div>
+
+<!-- メニュー -->
+<div class="sheet" id="menuSheet" hidden>
+  <div class="sheet-card">
+    <div class="sheet-head"><b>メニュー</b><button class="icon-btn" id="menuClose" aria-label="閉じる">✕</button></div>
+    <button class="big-btn wide ghost" id="newBtn">新しい棚卸しを始める</button>
+    <p class="lbl">今の記録を消します。送っていない時は確認が出ます。</p>
+    <div class="menu-info" id="menuInfo"></div>
+    <p class="lbl">棚卸しの間は、iPhoneの「設定 → 画面表示と明るさ → 自動ロック」を「なし」にしておくと安心です。</p>
+  </div>
+</div>
+
+<script src="zxing-reader.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
