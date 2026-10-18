@@ -120,18 +120,63 @@
     return { pieces: pieces, kinds: list.length };
   }
 
-  // Excelに貼る用：「JAN（タブ）数量」。個数0のJANは出さない
-  function toTsv(records) {
+  // ---------- 商品マスタ ----------
+  var UNKNOWN = '不明';
+
+  // CSVの文字列を行と列に分ける（"…" の中のカンマ・改行・"" にも対応）
+  function parseCsvRows(text) {
+    text = String(text || '').replace(/^﻿/, '');
+    var rows = [], row = [], cell = '', q = false;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (q) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') { cell += '"'; i++; } else q = false;
+        } else cell += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === ',') { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); rows.push(row); row = []; cell = '';
+      } else cell += ch;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+
+  // 「JAN,商品名」のCSVを読む。見出し行は飛ばす。正しくないJANは bad に入れる
+  function parseMasterCsv(text) {
+    var items = {}, count = 0, bad = [];
+    parseCsvRows(text).forEach(function (r) {
+      var raw = (r[0] || '').trim();
+      if (!raw || raw === 'JAN') return;
+      var jan = normalizeTyped(raw);
+      if (!jan || !/^\d+$/.test(raw)) { bad.push(raw); return; }
+      if (!(jan in items)) count++;
+      items[jan] = (r[1] || '').trim();
+    });
+    return { items: items, count: count, bad: bad };
+  }
+
+  function nameOf(names, jan) {
+    return names && Object.prototype.hasOwnProperty.call(names, jan) ? names[jan] : UNKNOWN;
+  }
+  function csvCell(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
+
+  // Excelに貼る用：「JAN（タブ）商品名（タブ）数量」。個数0のJANは出さない
+  function toTsv(records, names) {
     return totals(records)
       .filter(function (e) { return e.qty !== 0; })
-      .map(function (e) { return e.jan + '\t' + e.qty; })
+      .map(function (e) { return e.jan + '\t' + nameOf(names, e.jan).replace(/[\t\r\n]/g, ' ') + '\t' + e.qty; })
       .join('\n');
   }
 
-  // 記録用のCSV（Excelで文字化けしないよう先頭にBOM）
-  function toCsv(records) {
-    var rows = ['JAN,数量'];
-    totals(records).forEach(function (e) { if (e.qty !== 0) rows.push(e.jan + ',' + e.qty); });
+  // 記録用のCSV「JAN,商品名,数量」（Excelで文字化けしないよう先頭にBOM）
+  function toCsv(records, names) {
+    var rows = ['JAN,商品名,数量'];
+    totals(records).forEach(function (e) {
+      if (e.qty !== 0) rows.push(e.jan + ',' + csvCell(nameOf(names, e.jan)) + ',' + e.qty);
+    });
     return '﻿' + rows.join('\r\n') + '\r\n';
   }
 
@@ -144,7 +189,10 @@
     totals: totals,
     summary: summary,
     toTsv: toTsv,
-    toCsv: toCsv
+    toCsv: toCsv,
+    parseMasterCsv: parseMasterCsv,
+    nameOf: nameOf,
+    UNKNOWN: UNKNOWN
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TanaCore = api;

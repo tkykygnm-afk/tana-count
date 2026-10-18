@@ -2,9 +2,11 @@
 // カメラは使わず、Bluetoothのバーコードリーダー（キーボードとして入ってくる）で読む。
 (function () {
   'use strict';
-  var VERSION = '2026-10-18-R1';
+  var VERSION = '2026-10-18-R2';
   var STORE_KEY = 'tana-reader.v1'; // カメラ版（tana.v1）とは別の場所に保存する
   var MAX_QTY_LEN = 4;              // この回の個数は 9999 まで
+  var MASTER_KEY = 'tana-reader.master.v1'; // 商品マスタ（記録とは別。新しい棚卸しでも消さない）
+  var MASTER_STALE_DAYS = 35;       // これより古いマスタは「更新して」と出す
   var C = window.TanaCore;
   var $ = function (id) { return document.getElementById(id); };
 
@@ -25,6 +27,31 @@
   }
   if (navigator.storage && navigator.storage.persist) {
     navigator.storage.persist().catch(function () {});
+  }
+
+  // ---------- 商品マスタ ----------
+  var master = loadMaster(); // { fileName, loadedAt, count, items: {JAN: 商品名} } か null
+  function loadMaster() {
+    try {
+      var m = JSON.parse(localStorage.getItem(MASTER_KEY) || 'null');
+      if (m && m.items) return m;
+    } catch (e) {}
+    return null;
+  }
+  function names() { return master ? master.items : null; }
+  function productName(jan) { return master ? C.nameOf(master.items, jan) : null; }
+  function masterText() {
+    if (!master) return { text: '商品マスタ：未読み込み（商品名は「不明」で書き出します）', warn: true };
+    var d = new Date(master.loadedAt);
+    var days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    var text = '商品マスタ：' + master.fileName + '\n' + master.count + '件・' + d.toLocaleDateString('ja-JP') + ' に読み込み';
+    if (days >= MASTER_STALE_DAYS) text += '\n読み込んでから' + days + '日たっています。棚卸しの前に更新してください';
+    return { text: text, warn: days >= MASTER_STALE_DAYS };
+  }
+  function showMasterInfo(el) {
+    var t = masterText();
+    el.textContent = t.text;
+    el.classList.toggle('warn', t.warn);
   }
 
   var seq = 0;
@@ -50,6 +77,9 @@
     $('undoBtn').disabled = !last;
     if (last) {
       $('lastJan').textContent = last.jan;
+      var nm = productName(last.jan);
+      $('lastName').textContent = nm === null ? 'マスタ未読み込み' : nm === C.UNKNOWN ? '不明（マスタに無し）' : nm;
+      $('lastName').classList.toggle('unknown', nm === null || nm === C.UNKNOWN);
       $('lastQty').textContent = last.qty;
       $('lastTotal').textContent = janTotal(last.jan);
       $('qtyBox').classList.toggle('typing', typed !== '');
@@ -105,7 +135,8 @@
     typed = '';
     addRecord(jan, 1, src);
     render();
-    signal(same ? 'same' : 'new', same ? '同じJANをもう1個（合計 ' + janTotal(jan) + '）' : '読めました');
+    var unk = master && productName(jan) === C.UNKNOWN ? '・マスタに無いJAN' : '';
+    signal(same ? 'same' : 'new', (same ? '同じJANをもう1個（合計 ' + janTotal(jan) + '）' : '読めました') + unk);
   }
 
   // ---------- バーコードリーダー（キーボードとして入ってくる） ----------
@@ -246,14 +277,20 @@
     var list = C.totals(state.records).filter(function (e) { return e.qty !== 0; });
     var last = lastRecord();
     var s = C.summary(state.records);
-    sumEl.textContent = s.kinds + '種類・' + s.pieces + '点';
+    var unknownKinds = list.filter(function (e) { return productName(e.jan) !== null && productName(e.jan) === C.UNKNOWN; }).length;
+    sumEl.textContent = s.kinds + '種類・' + s.pieces + '点' + (unknownKinds ? '（不明 ' + unknownKinds + '種類）' : '');
     ol.innerHTML = '';
     list.slice().reverse().forEach(function (e) {
       var li = document.createElement('li');
       if (last && last.jan === e.jan) li.className = 'latest';
-      var a = document.createElement('span'); a.className = 'jan mono'; a.textContent = e.jan;
+      var item = document.createElement('div'); item.className = 'item';
+      var a = document.createElement('div'); a.className = 'jan mono'; a.textContent = e.jan;
+      var nm = productName(e.jan);
+      var n = document.createElement('div'); n.className = 'nm' + (nm === C.UNKNOWN ? ' unknown' : '');
+      n.textContent = nm === null ? '' : nm;
+      item.appendChild(a); if (nm !== null) item.appendChild(n);
       var b = document.createElement('span'); b.className = 'q mono'; b.textContent = e.qty;
-      li.appendChild(a); li.appendChild(b);
+      li.appendChild(item); li.appendChild(b);
       li.addEventListener('click', function () {
         openPad({
           mode: 'total', maxLen: 5, title: '合計の個数を直す', sub: e.jan + '（今 ' + e.qty + '個）', value: '',
@@ -281,6 +318,7 @@
   $('sendBtn').addEventListener('click', function () {
     var s = C.summary(state.records);
     $('sendSum').textContent = s.kinds + '種類・合計' + s.pieces + '点';
+    showMasterInfo($('sendMaster'));
     $('sendDone').textContent = '';
     $('sendSheet').hidden = false;
   });
@@ -288,7 +326,7 @@
   $('fileBtn').addEventListener('click', async function () {
     if (!C.summary(state.records).kinds) { $('sendDone').textContent = 'まだ何もありません'; return; }
     var name = '棚卸し_' + stamp() + '.csv';
-    var blob = new Blob([C.toCsv(state.records)], { type: 'text/csv' });
+    var blob = new Blob([C.toCsv(state.records, names())], { type: 'text/csv' });
     var file = new File([blob], name, { type: 'text/csv' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { await navigator.share({ files: [file] }); markSent('送りました：' + name); return; }
@@ -300,7 +338,7 @@
     markSent('保存しました：' + name);
   });
   $('copyBtn').addEventListener('click', async function () {
-    var text = C.toTsv(state.records);
+    var text = C.toTsv(state.records, names());
     if (!text) { $('sendDone').textContent = 'まだ何もありません'; return; }
     try { await navigator.clipboard.writeText(text); }
     catch (e) {
@@ -322,9 +360,28 @@
       '記録：' + state.records.length + '回分（' + new Date(state.startedAt).toLocaleString('ja-JP') + ' から）\n' +
       '消えにくい設定：' + (persisted ? '有効' : '無効') + '\n' +
       '版：' + VERSION;
+    showMasterInfo($('menuMaster'));
     $('menuSheet').hidden = false;
   });
   $('menuClose').addEventListener('click', function () { $('menuSheet').hidden = true; });
+  $('masterBtn').addEventListener('click', function () { $('masterFile').value = ''; $('masterFile').click(); });
+  $('masterFile').addEventListener('change', async function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var text;
+    try { text = await f.text(); } catch (e) { alert('ファイルを読めませんでした。'); return; }
+    var m = C.parseMasterCsv(text);
+    if (!m.count) { alert('商品マスタとして読める行がありませんでした（' + f.name + '）。\n今のマスタはそのままです。'); return; }
+    if (master && !confirm('今の商品マスタ（' + master.fileName + '・' + master.count + '件）を、\n' + f.name + '（' + m.count + '件）に置き換えますか？')) return;
+    var next = { fileName: f.name, loadedAt: new Date().toISOString(), count: m.count, items: m.items };
+    try { localStorage.setItem(MASTER_KEY, JSON.stringify(next)); }
+    catch (e) { alert('商品マスタを保存できませんでした。'); return; }
+    master = next;
+    showMasterInfo($('menuMaster'));
+    render();
+    alert(m.count + '件 読み込みました（' + f.name + '）' + (m.bad.length ? '\nJANが正しくない行 ' + m.bad.length + '件は飛ばしました' : ''));
+  });
+
   $('newBtn').addEventListener('click', function () {
     var unsent = state.records.length && state.sentRev !== state.rev;
     var msg = unsent

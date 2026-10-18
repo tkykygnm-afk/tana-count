@@ -134,3 +134,13 @@ button{ font:inherit; color:inherit; cursor:pointer; touch-action:manipulation; 
 .list li .jan{ font-size:17px; }
 .list li .q{ font-size:20px; font-weight:700; }
 .list li.latest{ background:var(--accent-soft); }
+
+/* 商品名・商品マスタ */
+.last-name{ font-size:15px; font-weight:600; line-height:1.35; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.unknown{ color:#C25E00; }
+@media (prefers-color-scheme: dark){ .unknown{ color:#FFB25C; } }
+.list li .item{ min-width:0; flex:1; margin-right:10px; }
+.list li .nm{ font-size:13px; color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.list li .nm.unknown{ color:#C25E00; font-weight:600; }
+.master-info{ margin:8px 0 0; font-size:13px; white-space:pre-line; }
+.master-info.warn{ color:#C25E00; font-weight:600; }

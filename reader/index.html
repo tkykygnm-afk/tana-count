@@ -43,6 +43,7 @@
         <div class="last-empty" id="lastEmpty">まだ何も読んでいません</div>
         <div class="last-body" id="lastBody" hidden>
           <div class="last-jan mono" id="lastJan"></div>
+          <div class="last-name" id="lastName"></div>
           <div class="last-row">
             <div class="qty-box" id="qtyBox">
               <span class="lbl">この回</span>
@@ -109,10 +110,11 @@
   <div class="sheet-card">
     <div class="sheet-head"><b>送る</b><button class="icon-btn" id="sendClose" aria-label="閉じる">✕</button></div>
     <p class="lbl" id="sendSum"></p>
+    <p class="master-info" id="sendMaster"></p>
     <button class="big-btn wide" id="fileBtn">CSVを書き出す</button>
-    <p class="lbl">「JAN,数量」の2列のCSVファイルを作って、共有からTeams・Slack・「ファイル」・AirDropへ送ります。</p>
+    <p class="lbl">「JAN,商品名,数量」の3列のCSVファイルを作って、共有からTeams・Slack・「ファイル」・AirDropへ送ります。</p>
     <button class="big-btn wide ghost" id="copyBtn">コピー（Excelに貼る用）</button>
-    <p class="lbl">「JAN（タブ）数量」の形でコピーします。</p>
+    <p class="lbl">「JAN（タブ）商品名（タブ）数量」の形でコピーします。</p>
     <p class="done" id="sendDone"></p>
   </div>
 </div>
@@ -121,8 +123,12 @@
 <div class="sheet" id="menuSheet" hidden>
   <div class="sheet-card">
     <div class="sheet-head"><b>メニュー</b><button class="icon-btn" id="menuClose" aria-label="閉じる">✕</button></div>
+    <button class="big-btn wide" id="masterBtn">商品マスタを読み込む</button>
+    <input type="file" id="masterFile" accept=".csv,text/csv" hidden>
+    <p class="master-info" id="menuMaster"></p>
+    <p class="lbl">おおさかが作った「商品マスタ_….csv」を選びます。読んだJANの商品名が出るようになります。</p>
     <button class="big-btn wide ghost" id="newBtn">新しい棚卸しを始める</button>
-    <p class="lbl">今の記録を消します。送っていない時は確認が出ます。</p>
+    <p class="lbl">今の記録を消します（商品マスタは消えません）。送っていない時は確認が出ます。</p>
     <div class="menu-info" id="menuInfo"></div>
     <p class="lbl">バーコードリーダーは、読んだ後に<b>Enter</b>を送る設定にしてください。</p>
     <p class="lbl">棚卸しの間は、「設定 → 画面表示と明るさ → 自動ロック」を「なし」にしておくと安心です。</p>
